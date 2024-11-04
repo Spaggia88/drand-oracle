@@ -125,32 +125,29 @@ contract DrandOracle is IDrandOracle, Ownable2Step, Pausable, EIP712 {
             revert InvalidRoundTimestamp();
         }
 
-        // Binary search between earliest and latest timestamps
-        uint64 low = _earliestRoundTimestamp;
-        uint64 high = _timestamp + 1;
+        uint64 low = _earliestRound;
+        uint64 high = _latestRound;
+        uint64 resultRound = 0;
 
-        while (low < high - 1) {
-            uint64 mid = uint64((uint256(low) + uint256(high)) / 2);
-            Random memory random = timestamps[mid];
+        while (low <= high) {
+            uint64 mid = uint64(low + (high - low) / 2);
+            Random memory random = rounds[mid];
 
-            if (random.round != 0) {
-                if (mid <= _timestamp) {
-                    low = mid;
-                } else {
-                    high = mid;
-                }
+            if (random.timestamp <= _timestamp) {
+                // This round is a candidate, but there might be a later one that's still <= timestamp
+                resultRound = mid;
+                low = mid + 1;
             } else {
-                // If no randomness at mid, look in lower half
-                high = mid;
+                // This round is too late, look in earlier rounds
+                high = mid - 1;
             }
         }
 
-        Random memory result = timestamps[low];
-        if (result.round == 0) {
+        if (resultRound == 0) {
             revert InvalidRoundTimestamp();
         }
 
-        return result;
+        return rounds[resultRound];
     }
 
     /// @notice Returns the latest round number that has been recorded

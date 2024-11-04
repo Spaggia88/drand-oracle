@@ -108,6 +108,52 @@ contract DrandOracleTest is Test {
         assertEq(retrievedData.timestamp, timestamp);
     }
 
+    function test_getRandomnessFromTimestamp_multipleRounds_success() public {
+        IDrandOracle.Random memory randomData1 = IDrandOracle.Random({
+            round: 4508563,
+            timestamp: 1730687910,
+            randomness: bytes32(hex"152fbcf71e680a5bc43e0374c0fd5e8bd5c87e21884fbc8c8396bb372a49c088"),
+            signature: hex"a0d0eb129fb178dc76f749edd34b3fa333c4fabea9cfa4e6e93c3ddd65d2a75d431eb62cd20a3425331bcd1000a5897314e851377c314a707cc2abbcca2acc7d6bc858171940d45ed0bc834bc67286c016b33454c8b8fd45a74d025b2a7ba923"
+        });
+        bytes memory signature1 = _signMessage(_hashSetRandomness(randomData1), signerPrivateKey);
+        oracle.setRandomness(randomData1, signature1);
+
+        IDrandOracle.Random memory randomData2 = IDrandOracle.Random({
+            round: 4508564,
+            timestamp: 1730687940,
+            randomness: bytes32(hex"32fd64310176d074234a3cef76dce4ba63c9c0dfb7941d4dbdca46ebf7a7afad"),
+            signature: hex"ac6c0641c64317951e640a5601a47c1dcc5d0a24d99b2456fd2d870efb3abd43f656d90116aa89fd932ba601e3ef997615372fd2c4c97d35f3e0eca948c0d054276c698537649ab373acda4bb2a454e7fcee31f04a5541325f407a0f2d602fa5"
+        });
+        bytes memory signature2 = _signMessage(_hashSetRandomness(randomData2), signerPrivateKey);
+
+        oracle.setRandomness(randomData2, signature2);
+
+        // Test getting the randomness from a timestamp that is right after the first round timestamp
+        uint64 newTimestamp1 = randomData1.timestamp + 1;
+        IDrandOracle.Random memory retrievedData1 = oracle.getRandomnessFromTimestamp(newTimestamp1);
+        assertEq(retrievedData1.round, randomData1.round);
+        assertEq(retrievedData1.randomness, randomData1.randomness);
+        assertEq(retrievedData1.signature, randomData1.signature);
+        assertEq(retrievedData1.timestamp, randomData1.timestamp);
+
+        // Test getting the randomness from a timestamp that is right after the second round timestamp
+        uint64 newTimestamp2 = randomData2.timestamp + 1;
+        IDrandOracle.Random memory retrievedData2 = oracle.getRandomnessFromTimestamp(newTimestamp2);
+        assertEq(retrievedData2.round, randomData2.round);
+        assertEq(retrievedData2.randomness, randomData2.randomness);
+        assertEq(retrievedData2.signature, randomData2.signature);
+        assertEq(retrievedData2.timestamp, randomData2.timestamp);
+
+        // Test getting the randomness from a timestamp that is far from the second round timestamp
+        // In cases like this, our oracle is likely haven't been updated for a while, this tests that the binary search works
+        uint64 newTimestamp3 = randomData2.timestamp + 2000000;
+        IDrandOracle.Random memory retrievedData3 = oracle.getRandomnessFromTimestamp(newTimestamp3);
+        assertEq(retrievedData3.round, randomData2.round);
+        assertEq(retrievedData3.randomness, randomData2.randomness);
+        assertEq(retrievedData3.signature, randomData2.signature);
+        assertEq(retrievedData3.timestamp, randomData2.timestamp);
+    }
+
     function test_getRandomnessFromTimestamp_invalidTimestamp() public {
         uint64 round = 4493690;
         bytes32 randomnessBytes = bytes32(hex"a502d9e94fd02472fbd292e054893fb26a37490610a4e6ec29734a20f359b9c5");
