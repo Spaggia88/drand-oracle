@@ -8,18 +8,21 @@ import (
 	"drand-oracle-updater/sender"
 	"drand-oracle-updater/signer"
 	"encoding/hex"
+	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/drand/drand/client"
-	"github.com/drand/drand/client/http"
+	drandHTTPClient "github.com/drand/drand/client/http"
 	drandLog "github.com/drand/drand/log"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
@@ -41,7 +44,7 @@ func main() {
 		Str("chain_hash", hex.EncodeToString(chainHash)).
 		Msg("Initializing drand client...")
 	drandClient, err := client.New(
-		client.From(http.ForURLs(cfg.DrandURLs, chainHash)...),
+		client.From(drandHTTPClient.ForURLs(cfg.DrandURLs, chainHash)...),
 		client.WithChainHash(chainHash),
 		client.WithLogger(drandLog.NewLogger(os.Stdout, drandLog.LogError)), // Only log errors
 	)
@@ -57,8 +60,9 @@ func main() {
 	}
 
 	// Initialize contract binding
-	log.Info().Str("address", cfg.DrandOracleAddress).Msg("Initializing DrandOraclecontract binding...")
-	binding, err := binding.NewBinding(common.HexToAddress(cfg.DrandOracleAddress), rpcClient)
+	contractAddress := common.HexToAddress(cfg.DrandOracleAddress)
+	log.Info().Str("address", contractAddress.Hex()).Msg("Initializing DrandOracle contract binding...")
+	binding, err := binding.NewBinding(contractAddress, rpcClient)
 	if err != nil {
 		log.Fatal().Err(err).Msg("error creating binding")
 	}
@@ -69,7 +73,7 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("error parsing private key")
 	}
-	signer := signer.NewSigner(cfg.ChainID, common.HexToAddress(cfg.DrandOracleAddress), signerPrivateKey)
+	signer := signer.NewSigner(cfg.ChainID, contractAddress, signerPrivateKey)
 	log.Info().Str("address", signer.Address().Hex()).Msg("Signer initialized")
 
 	// Initialize sender
@@ -83,7 +87,7 @@ func main() {
 
 	// Initialize updater service
 	log.Info().Msg("Initializing updater service...")
-	updater, err := service.NewUpdater(drandClient, rpcClient, cfg.SetRandomnessGasLimit, binding, cfg.GenesisRound, signer, sender)
+	updater, err := service.NewUpdater(drandClient, rpcClient, cfg.SetRandomnessGasLimit, cfg.ChainID, contractAddress, binding, cfg.GenesisRound, signer, sender)
 	if err != nil {
 		log.Fatal().Err(err).Msg("error creating updater")
 	}
@@ -93,6 +97,16 @@ func main() {
 	errGroup, ctx := errgroup.WithContext(context.Background())
 	errGroup.Go(func() error {
 		if err := updater.Start(ctx); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	// Start metrics server
+	errGroup.Go(func() error {
+		log.Info().Int("port", cfg.MetricsPort).Msg("Starting metrics server...")
+		http.Handle("/metrics", promhttp.Handler())
+		if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.MetricsPort), nil); err != nil {
 			return err
 		}
 		return nil

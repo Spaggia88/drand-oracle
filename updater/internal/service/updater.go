@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -37,6 +38,12 @@ type Updater struct {
 	// binding is the Drand Oracle contract binding
 	binding *binding.Binding
 
+	// chainID is the chain ID
+	chainID int64
+
+	// oracleAddress is the address of the Drand Oracle contract
+	oracleAddress common.Address
+
 	// genesisRound is the round at which oracle starts tracking
 	genesisRound uint64
 
@@ -56,6 +63,9 @@ type Updater struct {
 
 	// sender is the sender for the Drand Oracle contract
 	sender *sender.Sender
+
+	// Metrics instance
+	metrics *Metrics
 }
 
 type roundData struct {
@@ -68,15 +78,29 @@ func NewUpdater(
 	drandClient client.Client,
 	rpcClient *ethclient.Client,
 	setRandomnessGasLimit uint64,
+	chainID int64,
+	oracleAddress common.Address,
 	binding *binding.Binding,
 	genesisRound uint64,
 	signer *signer.Signer,
 	sender *sender.Sender,
 ) (*Updater, error) {
-	return &Updater{
+	// Set a timeout for the Drand info request
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Get chain hash from drand client
+	drandInfo, err := drandClient.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	updater := &Updater{
 		drandClient:           drandClient,
 		rpcClient:             rpcClient,
 		setRandomnessGasLimit: setRandomnessGasLimit,
+		chainID:               chainID,
+		oracleAddress:         oracleAddress,
 		binding:               binding,
 		genesisRound:          genesisRound,
 		roundChan:             make(chan *roundData, 1),
@@ -84,7 +108,13 @@ func NewUpdater(
 		latestDrandRound:      0,
 		signer:                signer,
 		sender:                sender,
-	}, nil
+		metrics: NewMetrics(
+			chainID,
+			oracleAddress,
+			drandInfo,
+		),
+	}
+	return updater, nil
 }
 
 func (u *Updater) Start(ctx context.Context) error {
@@ -189,6 +219,7 @@ func (u *Updater) watchNewRounds(ctx context.Context) error {
 	for result := range u.drandClient.Watch(ctx) {
 		u.latestDrandRoundMutex.Lock()
 		u.latestDrandRound = result.Round()
+		u.metrics.SetDrandRound(float64(result.Round()))
 		u.latestDrandRoundMutex.Unlock()
 		u.roundChan <- &roundData{
 			round:      result.Round(),
@@ -276,11 +307,14 @@ func (u *Updater) processRound(
 	}
 
 	if receipt.Status != types.ReceiptStatusSuccessful {
+		u.metrics.IncSetRandomnessFailure()
 		err = errors.New("set randomness transaction failed")
 		return err
 	} else {
 		log.Info().Uint64("round", round).Str("hash", tx.Hash().Hex()).Msg("Set randomness transaction successful")
 		u.latestOracleRound = round
+		u.metrics.SetOracleRound(float64(round))
+		u.metrics.IncSetRandomnessSuccess()
 	}
 	return nil
 }

@@ -17,4 +17,7 @@ RUN GIT_TERMINAL_PROMPT=1 \
 FROM gcr.io/distroless/cc-debian12
 COPY --from=build /bin/app /
 
+# Metrics port
+EXPOSE 4014
+
 ENTRYPOINT ["/app"]

@@ -10,4 +10,5 @@ type Config struct {
 	SignerPrivateKey      string   `envconfig:"SIGNER_PRIVATE_KEY" required:"true"`
 	SenderPrivateKey      string   `envconfig:"SENDER_PRIVATE_KEY" required:"true"`
 	GenesisRound          uint64   `envconfig:"GENESIS_ROUND" required:"true"`
+	MetricsPort           int      `envconfig:"METRICS_PORT" default:"4014"`
 }
