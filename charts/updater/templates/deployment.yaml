@@ -21,6 +21,8 @@ spec:
           ports:
             - containerPort: 4014
               name: http-prometheus
+            - containerPort: 8080
+              name: http
           envFrom:
             - configMapRef:
                 name: {{ include "updater.fullname" . }}

@@ -11,4 +11,5 @@ type Config struct {
 	SenderPrivateKey      string   `envconfig:"SENDER_PRIVATE_KEY" required:"true"`
 	GenesisRound          uint64   `envconfig:"GENESIS_ROUND" required:"true"`
 	MetricsPort           int      `envconfig:"METRICS_PORT" default:"4014"`
+	HttpPort              int      `envconfig:"HTTP_PORT" default:"8080"`
 }

@@ -97,6 +97,34 @@ func main() {
 	errGroup, ctx := errgroup.WithContext(context.Background())
 	errGroup.Go(func() error {
 		if err := updater.Start(ctx); err != nil {
+			log.Error().Err(err).Msg("error running updater")
+			return err
+		}
+		return nil
+	})
+
+	// Start health check server
+	errGroup.Go(func() error {
+		log.Info().Int("port", cfg.HttpPort).Msg("Starting health check server...")
+
+		healthMux := http.NewServeMux()
+		healthMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+		})
+
+		healthServer := &http.Server{
+			Addr:    fmt.Sprintf(":%d", cfg.HttpPort),
+			Handler: healthMux,
+		}
+
+		go func() {
+			<-ctx.Done()
+			healthServer.Shutdown(context.Background())
+		}()
+
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("error running health check server")
 			return err
 		}
 		return nil
@@ -105,8 +133,19 @@ func main() {
 	// Start metrics server
 	errGroup.Go(func() error {
 		log.Info().Int("port", cfg.MetricsPort).Msg("Starting metrics server...")
-		http.Handle("/metrics", promhttp.Handler())
-		if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.MetricsPort), nil); err != nil {
+
+		metricsServer := &http.Server{
+			Addr:    fmt.Sprintf(":%d", cfg.MetricsPort),
+			Handler: promhttp.Handler(),
+		}
+
+		go func() {
+			<-ctx.Done()
+			metricsServer.Shutdown(context.Background())
+		}()
+
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("error running metrics server")
 			return err
 		}
 		return nil

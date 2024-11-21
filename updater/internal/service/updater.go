@@ -8,6 +8,7 @@ import (
 	"drand-oracle-updater/signer"
 	"encoding/hex"
 	"errors"
+	"math"
 	"sync"
 	"time"
 
@@ -236,8 +237,38 @@ func (u *Updater) processRounds(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case rd := <-u.roundChan:
-			if err := u.processRound(ctx, rd.round, rd.randomness, rd.signature); err != nil {
-				log.Error().Err(err).Uint64("round", rd.round).Msg("Failed to process round")
+			// Add retry logic with exponential backoff
+			maxRetries := 5
+			var err error
+			for attempt := 0; attempt < maxRetries; attempt++ {
+				err = u.processRound(ctx, rd.round, rd.randomness, rd.signature)
+				if err == nil {
+					break
+				}
+
+				if attempt < maxRetries-1 {
+					backoffDuration := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+					log.Warn().
+						Err(err).
+						Uint64("round", rd.round).
+						Int("attempt", attempt+1).
+						Dur("backoff", backoffDuration).
+						Msg("Retrying round processing after backoff")
+
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(backoffDuration):
+						continue
+					}
+				}
+			}
+
+			if err != nil {
+				log.Error().
+					Err(err).
+					Uint64("round", rd.round).
+					Msg("Failed to process round after all retries")
 				return err
 			}
 		}

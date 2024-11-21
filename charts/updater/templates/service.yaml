@@ -10,4 +10,8 @@ spec:
       targetPort: http-prometheus
       protocol: TCP
       name: http-prometheus
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
   selector: {{- include "updater.selectorLabels" . | nindent 4}}
