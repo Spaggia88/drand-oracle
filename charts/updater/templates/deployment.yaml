@@ -23,6 +23,20 @@ spec:
               name: http-prometheus
             - containerPort: 8080
               name: http
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
           envFrom:
             - configMapRef:
                 name: {{ include "updater.fullname" . }}
