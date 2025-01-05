@@ -12,13 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
-
 	"github.com/drand/drand/chain"
 	"github.com/drand/drand/client"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
@@ -69,6 +68,8 @@ type Updater struct {
 	metrics *Metrics
 }
 
+const balanceUpdateInterval = 1 * time.Minute
+
 type roundData struct {
 	round      uint64
 	randomness []byte
@@ -112,6 +113,7 @@ func NewUpdater(
 		metrics: NewMetrics(
 			chainID,
 			oracleAddress,
+			sender.Address(),
 			drandInfo,
 		),
 	}
@@ -172,6 +174,9 @@ func (u *Updater) Start(ctx context.Context) error {
 	})
 	errg.Go(func() error {
 		return u.watchNewRounds(ctx)
+	})
+	errg.Go(func() error {
+		return u.monitorBalance(ctx)
 	})
 	return errg.Wait()
 }
@@ -355,4 +360,29 @@ func (u *Updater) GetLatestOracleRound() uint64 {
 	u.latestOracleRoundMutex.Lock()
 	defer u.latestOracleRoundMutex.Unlock()
 	return u.latestOracleRound
+}
+
+func (u *Updater) monitorBalance(ctx context.Context) error {
+	ticker := time.NewTicker(balanceUpdateInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			balance, err := u.rpcClient.BalanceAt(ctx, u.sender.Address(), nil)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to get updater balance")
+				continue
+			}
+
+			u.metrics.SetUpdaterBalance(balance.Int64())
+
+			log.Debug().
+				Str("address", u.sender.Address().Hex()).
+				Str("balance", balance.String()).
+				Msg("Updated balance metric")
+		}
+	}
 }

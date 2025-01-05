@@ -110,7 +110,10 @@ func main() {
 		healthMux := http.NewServeMux()
 		healthMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
+			_, err := w.Write([]byte("OK"))
+			if err != nil {
+				log.Error().Err(err).Msg("error writing health check response")
+			}
 		})
 
 		healthServer := &http.Server{
@@ -120,7 +123,10 @@ func main() {
 
 		go func() {
 			<-ctx.Done()
-			healthServer.Shutdown(context.Background())
+			err := healthServer.Shutdown(context.Background())
+			if err != nil {
+				log.Error().Err(err).Msg("error shutting down health check server")
+			}
 		}()
 
 		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -141,7 +147,10 @@ func main() {
 
 		go func() {
 			<-ctx.Done()
-			metricsServer.Shutdown(context.Background())
+			err := metricsServer.Shutdown(context.Background())
+			if err != nil {
+				log.Error().Err(err).Msg("error shutting down metrics server")
+			}
 		}()
 
 		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

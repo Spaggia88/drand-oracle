@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/hex"
 	"fmt"
+	"math/big"
 
 	"github.com/drand/drand/chain"
 	"github.com/ethereum/go-ethereum/common"
@@ -12,9 +13,10 @@ import (
 
 const (
 	// Label names
-	labelChainHash     = "chain_hash"
-	labelChainID       = "chain_id"
-	labelOracleAddress = "oracle_address"
+	labelChainHash      = "chain_hash"
+	labelChainID        = "chain_id"
+	labelOracleAddress  = "oracle_address"
+	labelUpdaterAddress = "updater_address"
 
 	// Drand info metric labels
 	labelPublicKey   = "public_key"
@@ -31,22 +33,25 @@ type Metrics struct {
 	oracleRoundTotal          *prometheus.GaugeVec
 	setRandomnessSuccessTotal *prometheus.CounterVec
 	setRandomnessFailureTotal *prometheus.CounterVec
+	updaterBalance            *prometheus.GaugeVec
 
 	// New info metric
 	drandInfo *prometheus.GaugeVec
 
 	// Store label values
-	chainHash     string
-	chainID       int64
-	oracleAddress common.Address
+	chainHash      string
+	chainID        int64
+	oracleAddress  common.Address
+	updaterAddress common.Address
 }
 
 // NewMetrics creates and registers all Prometheus metrics
-func NewMetrics(chainID int64, oracleAddress common.Address, drandInfo *chain.Info) *Metrics {
+func NewMetrics(chainID int64, oracleAddress common.Address, updaterAddress common.Address, drandInfo *chain.Info) *Metrics {
 	m := &Metrics{
-		chainHash:     drandInfo.HashString(),
-		chainID:       chainID,
-		oracleAddress: oracleAddress,
+		chainHash:      drandInfo.HashString(),
+		chainID:        chainID,
+		oracleAddress:  oracleAddress,
+		updaterAddress: updaterAddress,
 	}
 
 	m.drandRoundTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -92,6 +97,12 @@ func NewMetrics(chainID int64, oracleAddress common.Address, drandInfo *chain.In
 		hex.EncodeToString(drandInfo.GenesisSeed),
 	).Set(1)
 
+	// Add the balance metric
+	m.updaterBalance = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "drand_updater_balance_wei",
+		Help: "Current balance of the updater address in wei",
+	}, []string{labelChainID, labelOracleAddress, labelUpdaterAddress})
+
 	return m
 }
 
@@ -121,4 +132,15 @@ func (m *Metrics) IncSetRandomnessFailure() {
 		fmt.Sprintf("%d", m.chainID),
 		m.oracleAddress.Hex(),
 	).Inc()
+}
+
+func (m *Metrics) SetUpdaterBalance(wei int64) {
+	balance := new(big.Float).SetInt(big.NewInt(wei))
+	b, _ := balance.Float64()
+
+	m.updaterBalance.WithLabelValues(
+		fmt.Sprintf("%d", m.chainID),
+		m.oracleAddress.Hex(),
+		m.updaterAddress.Hex(),
+	).Set(b)
 }
