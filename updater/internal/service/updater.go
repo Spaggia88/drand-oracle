@@ -50,6 +50,9 @@ type Updater struct {
 	// roundChan is the channel for processing rounds
 	roundChan chan *roundData
 
+	// maxRetries is the maximum number of retries for processing a round
+	maxRetries int
+
 	// latestOracleRound keeps track of the latest round processed by the Oracle
 	latestOracleRound      uint64
 	latestOracleRoundMutex sync.RWMutex
@@ -84,6 +87,7 @@ func NewUpdater(
 	oracleAddress common.Address,
 	binding *binding.Binding,
 	genesisRound uint64,
+	maxRetries int,
 	signer *signer.Signer,
 	sender *sender.Sender,
 ) (*Updater, error) {
@@ -106,6 +110,7 @@ func NewUpdater(
 		binding:               binding,
 		genesisRound:          genesisRound,
 		roundChan:             make(chan *roundData, 1),
+		maxRetries:            maxRetries,
 		latestOracleRound:     0,
 		latestDrandRound:      0,
 		signer:                signer,
@@ -165,18 +170,18 @@ func (u *Updater) Start(ctx context.Context) error {
 	}
 
 	// Start the updater goroutines
-	errg, ctx := errgroup.WithContext(ctx)
+	errg, gCtx := errgroup.WithContext(ctx)
 	errg.Go(func() error {
-		return u.processRounds(ctx)
+		return u.processRounds(gCtx)
 	})
 	errg.Go(func() error {
-		return u.catchUp(ctx)
+		return u.catchUp(gCtx)
 	})
 	errg.Go(func() error {
-		return u.watchNewRounds(ctx)
+		return u.watchNewRounds(gCtx)
 	})
 	errg.Go(func() error {
-		return u.monitorBalance(ctx)
+		return u.monitorBalance(gCtx)
 	})
 	return errg.Wait()
 }
@@ -210,12 +215,16 @@ func (u *Updater) catchUp(ctx context.Context) error {
 				return err
 			}
 
-			u.roundChan <- &roundData{
+			select {
+			case u.roundChan <- &roundData{
 				round:      result.Round(),
 				randomness: result.Randomness(),
 				signature:  result.Signature(),
+			}:
+				currentRound++
+			case <-ctx.Done():
+				return ctx.Err()
 			}
-			currentRound++
 		}
 	}
 	return nil
@@ -240,18 +249,17 @@ func (u *Updater) processRounds(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			log.Debug().Msg("processRounds goroutine cancelled")
+			return ctx.Err()
 		case rd := <-u.roundChan:
-			// Add retry logic with exponential backoff
-			maxRetries := 5
 			var err error
-			for attempt := 0; attempt < maxRetries; attempt++ {
+			for attempt := 0; attempt < u.maxRetries; attempt++ {
 				err = u.processRound(ctx, rd.round, rd.randomness, rd.signature)
 				if err == nil {
 					break
 				}
 
-				if attempt < maxRetries-1 {
+				if attempt < u.maxRetries-1 {
 					backoffDuration := time.Duration(math.Pow(2, float64(attempt))) * time.Second
 					log.Warn().
 						Err(err).
@@ -377,7 +385,7 @@ func (u *Updater) monitorBalance(ctx context.Context) error {
 				continue
 			}
 
-			u.metrics.SetUpdaterBalance(balance.Int64())
+			u.metrics.SetUpdaterBalance(balance.String())
 
 			log.Debug().
 				Str("address", u.sender.Address().Hex()).

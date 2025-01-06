@@ -134,8 +134,8 @@ func (m *Metrics) IncSetRandomnessFailure() {
 	).Inc()
 }
 
-func (m *Metrics) SetUpdaterBalance(wei int64) {
-	balance := new(big.Float).SetInt(big.NewInt(wei))
+func (m *Metrics) SetUpdaterBalance(wei string) {
+	balance, _ := new(big.Float).SetString(wei)
 	b, _ := balance.Float64()
 
 	m.updaterBalance.WithLabelValues(

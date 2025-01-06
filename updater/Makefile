@@ -32,4 +32,5 @@ local-run-anvil:
 	export SIGNER_PRIVATE_KEY=$(ANVIL_SIGNER_PRIVATE_KEY) && \
 	export SENDER_PRIVATE_KEY=$(ANVIL_SENDER_PRIVATE_KEY) && \
 	export GENESIS_ROUND=$(ANVIL_GENESIS_ROUND) && \
+	export MAX_RETRIES=2 && \
 	go run --mod=mod ./cmd/main.go
