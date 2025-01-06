@@ -236,10 +236,14 @@ func (u *Updater) watchNewRounds(ctx context.Context) error {
 		u.latestDrandRound = result.Round()
 		u.metrics.SetDrandRound(float64(result.Round()))
 		u.latestDrandRoundMutex.Unlock()
-		u.roundChan <- &roundData{
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case u.roundChan <- &roundData{
 			round:      result.Round(),
 			randomness: result.Randomness(),
 			signature:  result.Signature(),
+		}:
 		}
 	}
 	return nil

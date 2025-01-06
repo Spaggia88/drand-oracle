@@ -21,6 +21,9 @@ config:
   chainId: "31337"
   genesisRound: "4496672"
   setRandomnessGasLimit: "500000"
+  maxRetries: "5"
+
+extraConfig: {}
 
 useExistingSecrets: false
 existingSecretName: ""

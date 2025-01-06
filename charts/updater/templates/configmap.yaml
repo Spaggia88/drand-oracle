@@ -11,3 +11,7 @@ data:
   CHAIN_ID: "{{ .Values.config.chainId }}"
   SET_RANDOMNESS_GAS_LIMIT: "{{ .Values.config.setRandomnessGasLimit }}"
   GENESIS_ROUND: "{{ .Values.config.genesisRound }}"
+  MAX_RETRIES: "{{ .Values.config.maxRetries }}"
+  {{- with .Values.extraConfig }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
